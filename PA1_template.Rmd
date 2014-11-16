@@ -8,18 +8,95 @@ output:
 
 ## Loading and preprocessing the data
 
-
+```{r}
+    ## load the compressed data, with the correct column classes
+    data <- read.csv(unz('activity.zip', 'activity.csv'), colClasses = c('integer','Date', 'integer'), na.strings = "NA")
+    
+    library(dplyr, quietly = TRUE, warn.conflicts = FALSE)
+    ## convert the data to a data table
+    data <- as.tbl(data)
+    ## generate data summaries (per day and per interval)
+    data_by_day <- summarize(group_by(data, date), sum_steps = sum(steps, na.rm = TRUE))
+    data_by_interval <- summarize(group_by(data, interval), avg_steps = mean(steps, na.rm = TRUE))
+```
 
 ## What is mean total number of steps taken per day?
 
+```{r}
+    library(lattice)
+    ## plot the number of steps per day
+    histogram(data_by_day$sum_steps, xlab = 'Steps by day')
+```
+```{r}
+    ## Compute the mean and the median variables from the daily numbers of steps. 
+    mean_by_day <- mean(data_by_day$sum_steps, na.rm = TRUE)
+    median_by_day <- median(data_by_day$sum_steps, na.rm = TRUE)
+    ## these variables are used on inline text below
+```
 
+The collected data presents the mean of `r sprintf("%.2f",mean_by_day) ` and the median of `r median_by_day` steps per day.  
 
 ## What is the average daily activity pattern?
 
+```{r}
+    ## plot hte average steps per interval
+    plot(data_by_interval, type='l', xlab = 'Time on a average day (5 minutes interval)', ylab='Steps (average across all days)')
+```
 
-
+```{r}
+    ## compute the max number of average steps and slice the data where the average is the max value
+    max_interval <- data_by_interval[data_by_interval$avg_steps == max(data_by_interval$avg_steps),]$interval
+```
+    
+The 5-minute interval `r max_interval` contains the maximum number of steps on average across all the days in the dataset.  
+    
 ## Imputing missing values
 
+```{r}
+    ## compute the number of missing values
+    missing <- sum(is.na(data$steps))
+``` 
 
+The collected data presents `r missing ` intervals without data.
+
+```{r}
+    ## join the original data with the set with de interval average data
+    new_data <- left_join(data, data_by_interval, by='interval')
+    ## fill the NA values with the corresponding interval average of steps
+    new_data[is.na(new_data$steps),]$steps <- new_data[is.na(new_data$steps),]$avg_steps
+    ## drop the avg_steps column
+    new_data <- select(new_data, -avg_steps)
+```
+
+```{r}
+    ## generate data summaries (per day and per interval) using the new data
+    new_data_by_day <- summarize(group_by(new_data, date), sum_steps = sum(steps))
+    ## plot the number of steps per day
+    histogram(new_data_by_day$sum_steps, xlab = 'Steps by day')
+    ## Compute the mean and the median variables from the daily numbers of steps. 
+    new_mean_by_day <- mean(new_data_by_day$sum_steps)
+    new_median_by_day <- median(new_data_by_day$sum_steps)
+    ## these variables are used on inline text below
+```
+
+
+When replacing the missing values in each interval with the average off same interval on all days, the mean and median steps per day are equal to `r sprintf("%.2f",new_mean_by_day)`, which are different for the values of mean and median calculated, `r sprintf("%.2f",mean_by_day) ` and `r median_by_day`, considering the missing values.
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+```{r}
+    ## use english as default locale
+    last_locale <- Sys.setlocale(category = "LC_ALL", locale = "en_US.UTF-8")
+    ## add a column that identifies the weekend
+    new_data <- mutate(new_data, wday = weekdays(date, abbreviate=TRUE) %in% c('Sat', 'Sun'), weekday = 'weekday')
+    ## mark the weekends
+    new_data[new_data$wday,]$weekday <- 'weekend'
+    ## convert the new column to a factor
+    new_data <- transform(new_data, weekday = factor(weekday))
+    ## drop the wday column
+    new_data <- select(new_data, -wday)
+    ## makes the data used in the last time series plot
+    new_data_by_interval <- summarize(group_by(new_data, weekday,interval), avg_steps = mean(steps))
+    ## compares weekdays and weekends 
+    xyplot(avg_steps ~ interval | weekday, data=new_data_by_interval, layout = c(1, 2), type='l', ylab='Number of steps')
+```
